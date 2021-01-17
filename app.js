@@ -1,12 +1,11 @@
 //jshint esversion:6
-
+const bcrypt = require('bcryptjs');
 const encrypt = require('mongoose-encryption');
 const express = require('express');
 const ejs = require('ejs');
 const bodyParser = require('body-parser');
 const { urlencoded } = require('body-parser');
 const mongoose = require('mongoose');
-const md5 = require('md5');
 
 const app = express();
 
@@ -35,22 +34,24 @@ app.get('/register',(req,res)=>{
 })
 
 app.post('/register',(req,res)=>{
-    const newUser = new User({
-        email : req.body.username,
-        password : md5(req.body.password)
-    });
-    newUser.save((err)=>{
-        if(err){
-            console.log(err);
-        }else{
-            res.render('secrets');
-        }
+    bcrypt.hash(req.body.password, 8, (err, hash)=>{
+        const newUser = new User({
+            email : req.body.username,
+            password : hash
+        });
+        newUser.save((err)=>{
+            if(err){
+                console.log(err);
+            }else{
+                res.render('secrets');
+            }
+        });
     });
 });
 
 app.post('/login',(req,res)=>{
     const userName = req.body.username;
-    const password= md5(req.body.password);
+    const password= req.body.password;
 
     User.findOne({email : userName},(err,foundUser)=>{
         if(err){
@@ -58,12 +59,13 @@ app.post('/login',(req,res)=>{
         }if(!foundUser){
             res.send("No user with that username is found");
         }if(foundUser){
-            if(foundUser.password == password){
-                res.render('secrets');  
-            }
-            else{
-                res.send("Password is incorrect !")
-            }
+            bcrypt.compare(password, foundUser.password, (err, result)=>{
+                if(result == true){
+                    res.render('secrets');
+                }else{
+                    res.send("Incorrect password for the existing username !")
+                }
+            })
         }
     })
 })
