@@ -1,4 +1,5 @@
 //jshint esversion:6
+require('dotenv').config()
 const bcrypt = require('bcryptjs');
 const encrypt = require('mongoose-encryption');
 const express = require('express');
@@ -10,6 +11,8 @@ const session= require('express-session');
 const passoport = require('passport');
 const passportLocalMongoose = require('passport-local-mongoose');
 const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+var findOrCreate = require('mongoose-findorcreate');
 
 const app = express();
 
@@ -25,21 +28,42 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session())
 
+passport.use(new GoogleStrategy({
+    clientID : process.env.CLIENT_ID,    // remember to configure the DOTENV before using it else you will get an error
+    clientSecret : process.env.SECRET,
+    callbackURL : "http://localhost:3000/auth/google/secrets",
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"   // this is provoided additionally other than the documentation since google recieves info from google+ id but since it is deprecating then we should use this addON so that google can fetch the data from main googel account
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
 
 mongoose.connect("mongodb://localhost:27017/userDB",{useNewUrlParser : true, useUnifiedTopology: true});
 
 const userSchema =new mongoose.Schema({
     email : String,
-    password : String
+    password : String,
+    googleId : String
 });
 
 userSchema.plugin(passportLocalMongoose);
+userSchema.plugin(findOrCreate);
 
 const User = new mongoose.model('User',userSchema);
 
 passport.use(User.createStrategy());
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.serializeUser(function(user, done) {
+    done(null, user.id);
+  });
+passport.deserializeUser(function(id, done) {
+    User.findById(id, function (err, user) {
+     done(err, user);
+    });
+});
 
 app.get('/',(req,res)=>{
     res.render('home');
@@ -57,6 +81,17 @@ app.get('/secrets',(req,res)=>{
         res.redirect('/login');
     }
 })
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile'] })  // here google as the string argument refers to the Strategy, we have used a local strategy earlier
+);
+app.get('/auth/google/secrets', 
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect('/secrets');
+  });
+
+
 
 app.post('/register',(req,res)=>{
     User.register({username: req.body.username}, req.body.password, function(err, user){
